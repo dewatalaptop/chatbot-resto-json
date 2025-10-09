@@ -1,11 +1,11 @@
 // TODO: PASTE KONFIGURASI FIREBASE ANDA DI SINI
  const firebaseConfig = {
-    apiKey: "AIzaSyDnizc-HXpSx-z4pA9P_crKCqPLK5735SI",
-    authDomain: "proyek-chatbot-json.firebaseapp.com",
-    projectId: "proyek-chatbot-json",
-    storageBucket: "proyek-chatbot-json.firebasestorage.app",
-    messagingSenderId: "283952252475",
-    appId: "1:283952252475:web:ee9e1c2b7d5a9cef7afe1e"
+    apiKey: "AIzaSyDkSAxnbKHUbc4T-jQg6xVUiHyd4i0XiP0",
+    authDomain: "chatbot-dolan-sawah-v2.firebaseapp.com",
+    projectId: "chatbot-dolan-sawah-v2",
+    storageBucket: "chatbot-dolan-sawah-v2.firebasestorage.app",
+    messagingSenderId: "337869888557",
+    appId: "1:337869888557:web:4416d6f89d8089c7096ca4"
   };
 
 //---------------------------------------------------------

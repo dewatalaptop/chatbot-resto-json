@@ -35,11 +35,15 @@ async function loadKnowledgeBase() {
 
 function getFirestoreResponse(userMessage) {
     const lowerCaseMessage = userMessage.toLowerCase();
-    const fallbackAnswer = `{"type": "text", "content": "Maaf, saya belum mengerti pertanyaan itu. Mohon tunggu balasan dari admin kami di WhatsApp ya."}`;
+    // Jawaban fallback sekarang menggunakan format JSON array yang baru
+    const fallbackAnswer = `[{"type": "text", "content": "Maaf, saya belum mengerti pertanyaan itu. Mohon tunggu balasan dari admin kami di WhatsApp ya."}]`;
 
     for (const rule of knowledgeBase) {
-        for (const keyword of rule.keywords) {
-            if (lowerCaseMessage.includes(keyword.toLowerCase().trim())) {
+        // Mengubah keyword menjadi array jika belum
+        const keywords = Array.isArray(rule.keywords) ? rule.keywords : (rule.keywords || '').split(',').map(k => k.trim());
+        
+        for (const keyword of keywords) {
+            if (keyword && lowerCaseMessage.includes(keyword.toLowerCase())) {
                 return rule.answer;
             }
         }
@@ -50,50 +54,72 @@ function getFirestoreResponse(userMessage) {
 function appendMessage(htmlContent, sender) {
     const messageElement = document.createElement('div');
     messageElement.classList.add('message', `${sender}-message`);
-    messageElement.innerHTML = htmlContent;
+    
+    // innerHTML digunakan agar tag HTML bisa dirender
+    messageElement.innerHTML = htmlContent; 
+
     messageContainer.appendChild(messageElement);
     chatWindow.scrollTop = chatWindow.scrollHeight;
     return messageElement;
 }
 
-function renderBotMessage(jsonString) {
-    let messageContentHTML = '';
+/**
+ * ====================================================================
+ * FUNGSI INI DIMODIFIKASI UNTUK MEMBACA FORMAT JSON YANG BARU
+ * ====================================================================
+ * Fungsi ini mencoba mengubah string jawaban menjadi JSON.
+ * Jika berhasil dan formatnya adalah array, ia akan membuat elemen HTML
+ * untuk setiap bagian pesan (teks, gambar, tombol).
+ * Jika gagal (hanya teks biasa), ia akan menampilkannya sebagai paragraf biasa.
+ */
+function renderBotMessage(messageString) {
+    const messageDiv = document.createElement('div');
+    
     try {
-        const data = JSON.parse(jsonString);
-        switch (data.type) {
-            case 'text':
-                messageContentHTML = `<p>${data.content}</p>`;
-                break;
-            case 'image':
-                messageContentHTML = `
-                    <img src="${data.url}" alt="Gambar dari chatbot" class="chat-image">
-                    <p>${data.caption || ''}</p>
-                `;
-                break;
-            case 'button':
-                messageContentHTML = `
-                    <p>${data.text}</p>
-                    <a href="${data.url}" target="_blank" class="chat-button">${data.buttonText}</a>
-                `;
-                break;
-            case 'rich':
-                data.elements.forEach(element => {
-                    if (element.type === 'image') {
-                        messageContentHTML += `<img src="${element.url}" alt="Gambar dari chatbot" class="chat-image">`;
-                    } else if (element.type === 'text') {
-                        messageContentHTML += `<p>${element.content}</p>`;
-                    } else if (element.type === 'button') {
-                        messageContentHTML += `<a href="${element.url}" target="_blank" class="chat-button">${element.buttonText}</a>`;
-                    }
-                });
-                break;
-            default:
-                messageContentHTML = `<p>${jsonString}</p>`;
+        const parsedData = JSON.parse(messageString);
+
+        if (Array.isArray(parsedData)) {
+            // Proses setiap bagian dalam array JSON
+            parsedData.forEach(part => {
+                if (part.type === 'text') {
+                    const p = document.createElement('p');
+                    p.textContent = part.content;
+                    messageDiv.appendChild(p);
+                } 
+                else if (part.type === 'image') {
+                    const img = document.createElement('img');
+                    img.src = part.content;
+                    img.className = 'chat-image';
+                    img.alt = 'Gambar dari chatbot';
+                    messageDiv.appendChild(img);
+                } 
+                else if (part.type === 'buttons') {
+                    const buttonContainer = document.createElement('div');
+                    buttonContainer.className = 'button-container';
+                    part.content.forEach(buttonData => {
+                        const button = document.createElement('a');
+                        button.textContent = buttonData.label;
+                        button.href = buttonData.url;
+                        button.target = '_blank';
+                        button.className = 'chat-button';
+                        buttonContainer.appendChild(button);
+                    });
+                    messageDiv.appendChild(buttonContainer);
+                }
+            });
+        } else {
+             // Jika JSON valid tapi bukan array, anggap sebagai error format
+            throw new Error("Format JSON harus berupa Array.");
         }
-    } catch (e) {
-        messageContentHTML = `<p>${jsonString}</p>`;
+    } catch (error) {
+        // Jika parsing gagal, anggap itu teks biasa
+        const p = document.createElement('p');
+        p.textContent = messageString;
+        messageDiv.appendChild(p);
     }
-    appendMessage(messageContentHTML, 'bot');
+
+    // Masukkan semua elemen yang sudah dibuat ke dalam satu bubble pesan
+    appendMessage(messageDiv.innerHTML, 'bot');
 }
 
 
@@ -102,12 +128,13 @@ chatForm.addEventListener('submit', (e) => {
     const userMessage = userInput.value.trim();
     if (!userMessage) return;
 
+    // Menampilkan pesan pengguna (hanya teks)
     appendMessage(`<p>${userMessage}</p>`, 'user');
     userInput.value = '';
 
     setTimeout(() => {
-        const botResponseJSON = getFirestoreResponse(userMessage);
-        renderBotMessage(botResponseJSON);
+        const botResponseString = getFirestoreResponse(userMessage);
+        renderBotMessage(botResponseString);
     }, 500);
 });
 

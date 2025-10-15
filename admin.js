@@ -28,12 +28,8 @@ const submitBtn = document.getElementById('submit-btn');
 const cancelEditBtn = document.getElementById('cancel-edit-btn');
 const formTitle = document.getElementById('form-title');
 
-// Cek status login
-if (sessionStorage.getItem('isAdminLoggedIn') === 'true') {
-    showDashboard();
-}
+if (sessionStorage.getItem('isAdminLoggedIn') === 'true') { showDashboard(); }
 
-// Event Listeners
 loginForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const username = document.getElementById('username').value;
@@ -41,9 +37,7 @@ loginForm.addEventListener('submit', (e) => {
     if (username === 'ultimasquad@gmail.com' && password === '437666') {
         sessionStorage.setItem('isAdminLoggedIn', 'true');
         showDashboard();
-    } else {
-        alert('Username atau password salah!');
-    }
+    } else { alert('Username atau password salah!'); }
 });
 
 logoutBtn.addEventListener('click', () => {
@@ -56,71 +50,51 @@ trainingForm.addEventListener('submit', handleFormSubmit);
 cancelEditBtn.addEventListener('click', resetForm);
 trainingDataList.addEventListener('click', handleListClick);
 
-
-/**
- * =================================================================
- * FUNGSI UTAMA BARU
- * =================================================================
- */
-
-// Menampilkan dashboard dan memuat data
 function showDashboard() {
     loginContainer.style.display = 'none';
     dashboardContainer.style.display = 'block';
     loadTrainingData();
 }
 
-/**
- * [BARU] Fungsi ini mengubah semua jenis input jawaban menjadi format standar chatbot.
- * 1. Jika input adalah teks biasa, akan diubah menjadi format JSON teks.
- * 2. Jika input adalah JSON yang sudah valid, akan diformat ulang agar rapi.
- * 3. Jika input adalah JSON yang valid tapi tidak sesuai format, akan "dibungkus" sebagai teks.
- * Tujuannya agar tidak ada lagi error di sisi chatbot.
- */
 function normalizeAnswerFormat(answerString) {
     try {
         const parsedJson = JSON.parse(answerString);
-        // Cek apakah format sudah sesuai standar (array of objects with type & content)
         if (Array.isArray(parsedJson) && parsedJson.every(item => item.type && item.content)) {
-            // Format sudah benar, kita hanya merapikannya (pretty-print)
             return JSON.stringify(parsedJson, null, 2);
         } else {
-             // JSON valid tapi formatnya salah, bungkus sebagai teks agar tidak error
-            const wrappedAsText = [{
-                type: 'text',
-                content: `Format JSON tidak standar, ditampilkan sebagai teks:\n\n${JSON.stringify(parsedJson, null, 2)}`
-            }];
+            const wrappedAsText = [{ type: 'text', content: `Format JSON tidak standar:\n\n${JSON.stringify(parsedJson, null, 2)}` }];
             return JSON.stringify(wrappedAsText, null, 2);
         }
     } catch (e) {
-        // Jika parsing gagal, berarti ini adalah teks biasa
         const formattedText = [{ type: 'text', content: answerString }];
         return JSON.stringify(formattedText, null, 2);
     }
 }
 
-
-// Menangani submit form (bisa untuk Tambah Baru atau Update)
 async function handleFormSubmit(e) {
     e.preventDefault();
+    
+    // [MODIFIKASI] Mengambil data dari field baru
     const topic = document.getElementById('topic-input').value;
     const keywordsString = document.getElementById('keywords-input').value;
     const rawAnswer = document.getElementById('answer-textarea').value;
-    const keywords = keywordsString.split(',').map(k => k.trim().toLowerCase());
+    const priority = parseInt(document.getElementById('priority-input').value) || 0;
+    const context = document.getElementById('context-input').value.trim();
     
-    // [BARU] Normalisasi jawaban sebelum disimpan
+    const keywords = keywordsString.split(',').map(k => k.trim().toLowerCase());
     const finalAnswer = normalizeAnswerFormat(rawAnswer);
-
     const docId = docIdInput.value;
+
+    // [MODIFIKASI] Objek data sekarang menyertakan priority dan context
+    const dataToSave = { topic, keywords, answer: finalAnswer, priority, context };
 
     try {
         if (docId) {
-            // Mode Update
-            await knowledgeCollection.doc(docId).update({ topic, keywords, answer: finalAnswer });
+            await knowledgeCollection.doc(docId).update(dataToSave);
             alert('Aturan berhasil diperbarui!');
         } else {
-            // Mode Tambah Baru
-            await knowledgeCollection.add({ topic, keywords, answer: finalAnswer, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+            dataToSave.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+            await knowledgeCollection.add(dataToSave);
             alert('Aturan berhasil disimpan!');
         }
         resetForm();
@@ -131,7 +105,6 @@ async function handleFormSubmit(e) {
     }
 }
 
-// Memuat semua data dari Firestore dan menampilkannya di list
 async function loadTrainingData() {
     trainingDataList.innerHTML = 'Memuat data...';
     try {
@@ -145,10 +118,11 @@ async function loadTrainingData() {
             const data = doc.data();
             const item = document.createElement('div');
             item.classList.add('training-item');
-            // [BARU] Menambahkan tombol Edit dan Hapus
+            
+            // [MODIFIKASI] Menampilkan data priority dan context di list
             item.innerHTML = `
                 <div class="training-item-content">
-                    <p><strong>Topik:</strong> ${data.topic}</p>
+                    <p><strong>Topik:</strong> ${data.topic} | <strong>Prioritas:</strong> ${data.priority || 0} | <strong>Konteks:</strong> ${data.context || '-'}</p>
                     <p><strong>Kata Kunci:</strong> ${data.keywords.join(', ')}</p>
                     <p><strong>Jawaban:</strong> <pre>${data.answer.substring(0, 150)}...</pre></p>
                 </div>
@@ -165,7 +139,6 @@ async function loadTrainingData() {
     }
 }
 
-// Menangani klik pada tombol Edit atau Hapus di list
 async function handleListClick(e) {
     const target = e.target;
     const docId = target.dataset.id;
@@ -175,36 +148,30 @@ async function handleListClick(e) {
             try {
                 await knowledgeCollection.doc(docId).delete();
                 loadTrainingData();
-            } catch (error) {
-                console.error("Error deleting document: ", error);
-                alert('Gagal menghapus aturan.');
-            }
+            } catch (error) { console.error("Error:", error); alert('Gagal hapus.'); }
         }
     } else if (target.classList.contains('edit-btn')) {
-        // [BARU] Logika untuk mode Edit
         try {
             const doc = await knowledgeCollection.doc(docId).get();
             if (doc.exists) {
                 const data = doc.data();
+                // [MODIFIKASI] Memuat data priority dan context ke form
                 document.getElementById('topic-input').value = data.topic;
                 document.getElementById('keywords-input').value = data.keywords.join(', ');
                 document.getElementById('answer-textarea').value = data.answer;
-                docIdInput.value = doc.id; // Simpan ID untuk proses update
+                document.getElementById('priority-input').value = data.priority || 0;
+                document.getElementById('context-input').value = data.context || '';
+                docIdInput.value = doc.id;
 
-                // Ubah tampilan form ke mode edit
                 formTitle.textContent = "Edit Aturan Chatbot";
                 submitBtn.textContent = 'Update Aturan';
                 cancelEditBtn.style.display = 'inline-block';
-                window.scrollTo(0, 0); // Scroll ke atas agar form terlihat
+                window.scrollTo(0, 0);
             }
-        } catch (error) {
-            console.error("Error fetching document for edit: ", error);
-            alert('Gagal memuat data untuk diedit.');
-        }
+        } catch (error) { console.error("Error:", error); alert('Gagal memuat data.'); }
     }
 }
 
-// [BARU] Fungsi untuk mereset form ke keadaan semula
 function resetForm() {
     trainingForm.reset();
     docIdInput.value = '';

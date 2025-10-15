@@ -23,6 +23,12 @@
             
             <input type="text" id="topic-input" placeholder="Topik (mis: Promo Spesial)" required>
             <input type="text" id="keywords-input" placeholder="Kata Kunci (pisahkan koma)" required>
+            
+            <div class="form-row">
+                <input type="number" id="priority-input" placeholder="Prioritas (angka)" value="0">
+                <input type="text" id="context-input" placeholder="Konteks Jawaban (opsional)">
+            </div>
+            
             <textarea id="answer-textarea" placeholder="Paste jawaban Teks Biasa atau JSON di sini..." required rows="10"></textarea>
             <small>Teks biasa & format JSON apapun akan dikonversi otomatis ke format standar chatbot.</small>
             <button type="submit" id="submit-btn">Simpan Aturan</button>
@@ -35,7 +41,7 @@
     </div>
 
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script> <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
     <script src="admin.js"></script>
 </body>
 </html>

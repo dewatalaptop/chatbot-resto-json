@@ -15,6 +15,7 @@
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const knowledgeCollection = db.collection('knowledgeBase');
+const unansweredCollection = db.collection('unanswered_queries'); // [BARU] Koleksi untuk pertanyaan tak terjawab
 
 const chatForm = document.getElementById('chat-form');
 const userInput = document.getElementById('user-input');
@@ -22,7 +23,19 @@ const messageContainer = document.getElementById('message-container');
 const chatWindow = document.getElementById('chat-window');
 
 let knowledgeBase = [];
+let currentContext = null; // [BARU] Variabel untuk menyimpan konteks percakapan
 
+// [BARU] Jawaban fallback yang proaktif dengan sugesti
+const fallbackAnswer = `[
+    {"type": "text", "content": "Maaf, saya belum mengerti pertanyaan Anda. Mungkin salah satu topik di bawah ini bisa membantu?"},
+    {"type": "buttons", "content": [
+        {"label": "Lihat Promo", "url": "#tanya_promo"},
+        {"label": "Paket Jeep", "url": "#tanya_jeep"},
+        {"label": "Menu Resto", "url": "#tanya_menu"}
+    ]}
+]`;
+
+// Memuat semua aturan dari Firestore saat halaman dibuka
 async function loadKnowledgeBase() {
     try {
         const snapshot = await knowledgeCollection.get();
@@ -33,67 +46,94 @@ async function loadKnowledgeBase() {
     }
 }
 
-function getFirestoreResponse(userMessage) {
-    const lowerCaseMessage = userMessage.toLowerCase();
-    // Jawaban fallback sekarang menggunakan format JSON array yang baru
-    const fallbackAnswer = `[{"type": "text", "content": "Maaf, saya belum mengerti pertanyaan itu. Mohon tunggu balasan dari admin kami di WhatsApp ya."}]`;
+// [BARU] Fungsi untuk mencatat pertanyaan yang tidak bisa dijawab
+async function logUnansweredQuery(message) {
+    try {
+        await unansweredCollection.add({
+            query: message,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        console.log("Pertanyaan tak terjawab dicatat:", message);
+    } catch (error) {
+        console.error("Gagal mencatat pertanyaan:", error);
+    }
+}
 
+
+/**
+ * =================================================================
+ * [LOGIKA INTI BARU] - Menggunakan Skoring dan Konteks
+ * =================================================================
+ */
+function getSmartResponse(userMessage) {
+    const lowerCaseMessage = userMessage.toLowerCase();
+    let bestMatch = { score: 0, rule: null };
+
+    // Loop melalui SEMUA aturan untuk mencari skor terbaik
     for (const rule of knowledgeBase) {
-        // Mengubah keyword menjadi array jika belum
-        const keywords = Array.isArray(rule.keywords) ? rule.keywords : (rule.keywords || '').split(',').map(k => k.trim());
-        
+        let currentScore = 0;
+        const keywords = Array.isArray(rule.keywords) ? rule.keywords : [];
+
+        // 1. Hitung skor berdasarkan kata kunci
         for (const keyword of keywords) {
-            if (keyword && lowerCaseMessage.includes(keyword.toLowerCase())) {
-                return rule.answer;
+            if (lowerCaseMessage.includes(keyword.toLowerCase())) {
+                currentScore += 10; // Setiap kata kunci yang cocok mendapat 10 poin
             }
         }
+
+        // 2. Beri bonus besar jika konteksnya cocok
+        if (rule.context && rule.context === currentContext) {
+            currentScore += 30; // Bonus konteks 30 poin, sangat kuat
+        }
+
+        // 3. Tambahkan skor prioritas dari aturan itu sendiri
+        currentScore += rule.priority || 0;
+
+        // 4. Bandingkan dengan skor terbaik sejauh ini
+        if (currentScore > bestMatch.score) {
+            bestMatch = { score: currentScore, rule: rule };
+        }
     }
-    return fallbackAnswer;
+
+    // Jika ada aturan yang cocok dengan skor di atas 0
+    if (bestMatch.score > 0) {
+        // Atur konteks untuk pertanyaan selanjutnya
+        currentContext = bestMatch.rule.context || null;
+        console.log("Konteks diatur menjadi:", currentContext);
+        return bestMatch.rule.answer;
+    } else {
+        // Jika tidak ada yang cocok sama sekali
+        logUnansweredQuery(userMessage); // Catat pertanyaan gagal
+        currentContext = null; // Reset konteks jika gagal
+        return fallbackAnswer;
+    }
 }
 
 function appendMessage(htmlContent, sender) {
     const messageElement = document.createElement('div');
     messageElement.classList.add('message', `${sender}-message`);
-    
-    // innerHTML digunakan agar tag HTML bisa dirender
     messageElement.innerHTML = htmlContent; 
-
     messageContainer.appendChild(messageElement);
     chatWindow.scrollTop = chatWindow.scrollHeight;
-    return messageElement;
 }
 
-/**
- * ====================================================================
- * FUNGSI INI DIMODIFIKASI UNTUK MEMBACA FORMAT JSON YANG BARU
- * ====================================================================
- * Fungsi ini mencoba mengubah string jawaban menjadi JSON.
- * Jika berhasil dan formatnya adalah array, ia akan membuat elemen HTML
- * untuk setiap bagian pesan (teks, gambar, tombol).
- * Jika gagal (hanya teks biasa), ia akan menampilkannya sebagai paragraf biasa.
- */
 function renderBotMessage(messageString) {
     const messageDiv = document.createElement('div');
-    
     try {
         const parsedData = JSON.parse(messageString);
-
         if (Array.isArray(parsedData)) {
-            // Proses setiap bagian dalam array JSON
             parsedData.forEach(part => {
                 if (part.type === 'text') {
                     const p = document.createElement('p');
                     p.textContent = part.content;
                     messageDiv.appendChild(p);
-                } 
-                else if (part.type === 'image') {
+                } else if (part.type === 'image') {
                     const img = document.createElement('img');
                     img.src = part.content;
                     img.className = 'chat-image';
                     img.alt = 'Gambar dari chatbot';
                     messageDiv.appendChild(img);
-                } 
-                else if (part.type === 'buttons') {
+                } else if (part.type === 'buttons') {
                     const buttonContainer = document.createElement('div');
                     buttonContainer.className = 'button-container';
                     part.content.forEach(buttonData => {
@@ -108,17 +148,13 @@ function renderBotMessage(messageString) {
                 }
             });
         } else {
-             // Jika JSON valid tapi bukan array, anggap sebagai error format
             throw new Error("Format JSON harus berupa Array.");
         }
     } catch (error) {
-        // Jika parsing gagal, anggap itu teks biasa
         const p = document.createElement('p');
         p.textContent = messageString;
         messageDiv.appendChild(p);
     }
-
-    // Masukkan semua elemen yang sudah dibuat ke dalam satu bubble pesan
     appendMessage(messageDiv.innerHTML, 'bot');
 }
 
@@ -128,12 +164,14 @@ chatForm.addEventListener('submit', (e) => {
     const userMessage = userInput.value.trim();
     if (!userMessage) return;
 
-    // Menampilkan pesan pengguna (hanya teks)
     appendMessage(`<p>${userMessage}</p>`, 'user');
     userInput.value = '';
 
+    // Gunakan fungsi logika yang baru
+    const botResponseString = getSmartResponse(userMessage);
+
+    // Tampilkan loading/typing indicator (opsional)
     setTimeout(() => {
-        const botResponseString = getFirestoreResponse(userMessage);
         renderBotMessage(botResponseString);
     }, 500);
 });
